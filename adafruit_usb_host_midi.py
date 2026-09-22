@@ -20,6 +20,9 @@ __repo__ = "https://github.com/adafruit/Adafruit_CircuitPython_USB_Host_MIDI.git
 
 DIR_IN = 0x80
 
+# MIDI bytes per USB packet, indexed by code index number. USB MIDI 1.0, table 4-1.
+_CIN_LENGTH = (0, 0, 2, 3, 3, 1, 2, 3, 3, 3, 3, 3, 2, 2, 3, 1)
+
 
 class MIDI:
     """
@@ -39,7 +42,7 @@ class MIDI:
         self.device = device
         self.timeout_ms = round(timeout * 1000) if timeout else 0
 
-        self.buf = bytearray(64)
+        self.in_ep_max_packet_size = 0
         self.start = 0
         self._remaining = 0
 
@@ -67,9 +70,18 @@ class MIDI:
                 if endpoint_address & DIR_IN:
                     if midi_interface:
                         self.in_ep = endpoint_address
+                        self.in_ep_max_packet_size = config_descriptor[i + 4] | (
+                            config_descriptor[i + 5] << 8
+                        )
                 elif midi_interface:
                     self.out_ep = endpoint_address
             i += descriptor_len
+
+        # A read never returns more than one packet unless it fills the buffer, so a
+        # buffer bigger than the endpoint's packet size waits for packets that may
+        # never come and times out instead. Some devices use 4 byte packets.
+        self.buf = bytearray(self.in_ep_max_packet_size or 64)
+        self._decoded = bytearray(len(self.buf))
 
         device.set_configuration()
         device.detach_kernel_driver(self.interface_number)
@@ -92,15 +104,27 @@ class MIDI:
         if self._remaining == 0:
             try:
                 n = self.device.read(self.in_ep, self.buf, self.timeout_ms)
-                self._remaining = n - 1
-                self.start = 1
+                self._decode(n)
             except usb.core.USBTimeoutError:
                 pass
         size = min(size, self._remaining)
-        b = self.buf[self.start : self.start + size]
+        b = self._decoded[self.start : self.start + size]
         self.start += size
         self._remaining -= size
         return b
+
+    def _decode(self, n):
+        """Unpack the MIDI bytes from the 4 byte USB packets in ``self.buf``."""
+        count = 0
+        for i in range(0, n - 3, 4):
+            # The low nibble of the first byte is the code index number. It gives the
+            # length of the message, so the rest of the packet is padding and dropping
+            # it keeps the header bytes of later packets out of the MIDI stream.
+            for j in range(1, _CIN_LENGTH[self.buf[i] & 0xF] + 1):
+                self._decoded[count] = self.buf[i + j]
+                count += 1
+        self.start = 0
+        self._remaining = count
 
     def readinto(self, buf):
         """Read bytes into the ``buf``. Read at most ``len(buf)`` bytes.
