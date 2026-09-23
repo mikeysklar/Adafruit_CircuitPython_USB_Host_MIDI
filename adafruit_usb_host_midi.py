@@ -32,10 +32,11 @@ class MIDI:
     :param device: a ``usb.core.Device`` object which implements
         ``read(endpoint, buffer)`` and ``write(endpoint,buffer)``
     :param float timeout: timeout in seconds to wait for read or write operation
-        to succeeds. Default to None, i.e. reads and writes will block.
+        to succeed. Default to 0.01. None blocks until data arrives, which can
+        leave messages from a multi-packet transfer waiting in the parser's buffer.
     """
 
-    def __init__(self, device, timeout=None):
+    def __init__(self, device, timeout=0.01):
         self.interface_number = 0
         self.in_ep = 0
         self.out_ep = 0
