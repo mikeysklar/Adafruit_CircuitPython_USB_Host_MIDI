@@ -43,7 +43,7 @@ class MIDI:
         self.device = device
         self.timeout_ms = round(timeout * 1000) if timeout else 0
 
-        self.in_ep_max_packet_size = 0
+        in_ep_max_packet_size = 0
         self.start = 0
         self._remaining = 0
 
@@ -71,7 +71,7 @@ class MIDI:
                 if endpoint_address & DIR_IN:
                     if midi_interface:
                         self.in_ep = endpoint_address
-                        self.in_ep_max_packet_size = config_descriptor[i + 4] | (
+                        in_ep_max_packet_size = config_descriptor[i + 4] | (
                             config_descriptor[i + 5] << 8
                         )
                 elif midi_interface:
@@ -81,7 +81,7 @@ class MIDI:
         # A read never returns more than one packet unless it fills the buffer, so a
         # buffer bigger than the endpoint's packet size waits for packets that may
         # never come and times out instead. Some devices use 4 byte packets.
-        self.buf = bytearray(self.in_ep_max_packet_size or 64)
+        self.buf = bytearray(in_ep_max_packet_size or 64)
         self._decoded = bytearray(len(self.buf))
 
         device.set_configuration()
